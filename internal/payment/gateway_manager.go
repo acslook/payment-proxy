@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"payment-proxy/internal/payment/entities"
-	"sync"
 	"time"
 
+	"github.com/go-redsync/redsync/v4"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -18,14 +18,15 @@ type status struct {
 
 type GatewayManager struct {
 	cache    *redis.Client
+	redsync  *redsync.Redsync
 	gateways []PaymentGateway
 	statuses map[entities.GatewayType]*status
-	mu       sync.RWMutex
 }
 
-func NewGatewayManager(cache *redis.Client, gateways ...PaymentGateway) *GatewayManager {
+func NewGatewayManager(cache *redis.Client, redsync *redsync.Redsync, gateways ...PaymentGateway) *GatewayManager {
 	m := &GatewayManager{
 		cache:    cache,
+		redsync:  redsync,
 		gateways: gateways,
 		statuses: make(map[entities.GatewayType]*status),
 	}
@@ -35,7 +36,7 @@ func NewGatewayManager(cache *redis.Client, gateways ...PaymentGateway) *Gateway
 }
 
 func (m *GatewayManager) monitorHealth() {
-	ticker := time.NewTicker(6 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -44,8 +45,11 @@ func (m *GatewayManager) monitorHealth() {
 }
 
 func (m *GatewayManager) checkGateway() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	ctx := context.Background()
+	mutex := m.redsync.NewMutex("heath-check-pp", redsync.WithExpiry(60*time.Second))
+	if err := mutex.LockContext(ctx); err != nil {
+		return
+	}
 
 	for _, gw := range m.gateways {
 		health, minResponseTime := gw.HealthCheck(context.Background())
@@ -86,6 +90,9 @@ func (m *GatewayManager) checkGateway() {
 		}
 	}
 
+	if ok, err := mutex.UnlockContext(ctx); !ok || err != nil {
+		fmt.Println("[ERROR] Unlock error:", err)
+	}
 }
 
 func (m *GatewayManager) GetTheBest() PaymentGateway {

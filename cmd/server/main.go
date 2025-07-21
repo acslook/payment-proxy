@@ -13,6 +13,8 @@ import (
 	"payment-proxy/internal/payment/handlers"
 	"syscall"
 
+	"github.com/go-redsync/redsync/v4"
+	redsync_redis "github.com/go-redsync/redsync/v4/redis/goredis/v9"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -55,8 +57,10 @@ func main() {
 	service := payment.NewPaymentService(repo)
 
 	redisClient := QueueConfig(ctx)
+	pool := redsync_redis.NewPool(redisClient)
+	redsyncLock := redsync.New(pool)
 
-	gatewayManager := payment.NewGatewayManager(redisClient, gatewayDefault, gatewayFallback)
+	gatewayManager := payment.NewGatewayManager(redisClient, redsyncLock, gatewayDefault, gatewayFallback)
 
 	redisQueue := payment.NewRedisQueue(ctx, redisClient, service, gatewayManager)
 
@@ -73,6 +77,7 @@ func main() {
 	e.GET("/payments-summary", getPaymentsSummaryHandler.Handle)
 	e.POST("/purge-payments", func(c echo.Context) error {
 		repo.Purge(context.Background())
+		redisQueue.ClearStream(context.Background())
 		return c.JSON(http.StatusOK, map[string]string{"message": "payments purged"})
 	})
 

@@ -41,7 +41,7 @@ func NewRedisQueue(ctx context.Context, redisClient *redis.Client, service *Serv
 }
 
 func (q *RedisQueue) Start() {
-	q.clearStream(context.Background())
+	q.ClearStream(context.Background())
 
 	// Config
 	numConsumers := 5
@@ -163,7 +163,7 @@ func (q *RedisQueue) Enqueue(ctx context.Context, payment entities.Payment) {
 	fmt.Println("[INFO] Enqueued payment:", result)
 }
 
-func (q *RedisQueue) clearStream(ctx context.Context) {
+func (q *RedisQueue) ClearStream(ctx context.Context) {
 	err := q.redisClient.Del(ctx, PaymentStream).Err()
 	if err != nil {
 		fmt.Printf("[ERROR] Failed to clear stream %s: %v\n", PaymentStream, err)
