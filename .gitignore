@@ -1,0 +1,38 @@
+# Binários do Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Diretório do cache do módulo
+/pkg/
+/bin/
+/dist/
+
+# Dependências geradas automaticamente
+vendor/
+
+# Arquivos temporários do editor
+*.log
+*.tmp
+*.swp
+*.swo
+*.DS_Store
+*.idea/
+#*.vscode/
+*.env
+*.env.*
+
+# Arquivos gerados de cobertura de testes
+*.coverprofile
+coverage.out
+
+# Arquivos gerados por ferramentas de profiling
+cpu.prof
+mem.prof
+
+# Arquivos de build
+/go.sum
