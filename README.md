@@ -9,6 +9,9 @@
 
 ##
 
+## 🖧 Arquitetura
+<img src="payment-proxy-arch.jpg" alt="Logo" width="auto"/>
+
 ## ⚙️ Tecnologias Utilizadas
 
 - **Linguagem**: Golang
