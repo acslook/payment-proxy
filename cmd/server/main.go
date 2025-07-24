@@ -41,9 +41,11 @@ func main() {
 
 	//Configure echo server
 	e := echo.New()
-
-	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
+	e.Use(middleware.Gzip())
+	e.HideBanner = true
+	e.HidePort = true
+	e.Debug = false
 
 	e.POST("/payments", createPaymentHandler.Handle)
 	e.GET("/payments-summary", getPaymentsSummaryHandler.Handle)

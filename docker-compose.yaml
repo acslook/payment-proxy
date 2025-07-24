@@ -108,6 +108,7 @@ services:
     depends_on:
       - api1
       - api2
+      - worker
     deploy:
       resources:
         limits:
