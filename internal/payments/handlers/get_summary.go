@@ -3,17 +3,17 @@ package handlers
 import (
 	"context"
 	"net/http"
-	"payment-proxy/internal/payment"
+	"payment-proxy/internal/payments"
 	"time"
 
 	"github.com/labstack/echo/v4"
 )
 
 type GetSummaryHandler struct {
-	paymentService *payment.Service
+	paymentService *payments.Service
 }
 
-func NewGetSummaryHandler(s *payment.Service) *GetSummaryHandler {
+func NewGetSummaryHandler(s *payments.Service) *GetSummaryHandler {
 	return &GetSummaryHandler{paymentService: s}
 }
 

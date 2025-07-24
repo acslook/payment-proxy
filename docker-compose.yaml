@@ -12,8 +12,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: "100MB"
+          cpus: '0.1'
+          memory: "80MB"
   db:
     image: postgres:17-alpine
     container_name: payment-db
@@ -33,7 +33,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.4"
+          cpus: "0.3"
           memory: "100MB"
   api1:
       image: acslook/payment-proxy:latest
@@ -47,11 +47,12 @@ services:
         - backend
         - payment-processor
       restart: unless-stopped
+      command: ["server"]
       deploy:
         resources:
           limits:
-            cpus: '0.5'
-            memory: "60MB"
+            cpus: '0.2'
+            memory: "50MB"
       depends_on:
         - db
         - redis
@@ -67,14 +68,36 @@ services:
       - backend
       - payment-processor
     restart: unless-stopped
+    command: ["server"]
     deploy:
       resources:
         limits:
           cpus: '0.2'
-          memory: "60MB"
+          memory: "50MB"
     depends_on:
       - db
       - redis
+  worker:
+      image: acslook/payment-proxy:latest
+      container_name: worker
+      environment:
+        - CONN_STRING=postgres://rinha25:rinha25@db:5432/payments_db?sslmode=disable
+        - REDIS_URL=redis:6379
+        - GATEWAY_DEFAULT_URL=http://payment-processor-default:8080
+        - GATEWAY_FALLBACK_URL=http://payment-processor-fallback:8080
+      networks:
+        - backend
+        - payment-processor
+      restart: unless-stopped
+      command: ["worker"]
+      deploy:
+        resources:
+          limits:
+            cpus: '0.6'
+            memory: "40MB"
+      depends_on:
+        - db
+        - redis
   nginx:
     image: nginx:alpine
     container_name: nginx-lb
@@ -88,7 +111,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
+          cpus: '0.2'
           memory: "30MB"
     networks:
       - backend

@@ -1,4 +1,4 @@
-package payment
+package payment_processor
 
 import (
 	"bytes"
@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"payment-proxy/internal/payment/entities"
+	"payment-proxy/internal/payments/entities"
 	"time"
 )
 
@@ -17,9 +17,11 @@ type PaymentGateway interface {
 }
 
 type PaymentsGateway struct {
-	baseURL     string
-	client      *http.Client
-	gatewayType entities.GatewayType
+	baseURL         string
+	client          *http.Client
+	gatewayType     entities.GatewayType
+	healthy         bool
+	minResponseTime int
 }
 
 type HealthCheckResponse struct {
@@ -27,7 +29,7 @@ type HealthCheckResponse struct {
 	MinResponseTime int  `json:"minResponseTime"`
 }
 
-func NewPaymentGateway(baseURL string, gatewayType entities.GatewayType, tax float64) *PaymentsGateway {
+func NewPaymentGateway(baseURL string, gatewayType entities.GatewayType) *PaymentsGateway {
 	return &PaymentsGateway{
 		baseURL: baseURL,
 		client: &http.Client{
@@ -88,7 +90,11 @@ func (g *PaymentsGateway) HealthCheck(ctx context.Context) (health bool, minResp
 	if minRespTime <= 0 {
 		minRespTime = 1
 	}
-	return !healthCheckResponse.Failing, minRespTime
+
+	g.healthy = !healthCheckResponse.Failing
+	g.minResponseTime = minRespTime
+
+	return g.healthy, g.minResponseTime
 }
 
 func (g *PaymentsGateway) GetType() entities.GatewayType {

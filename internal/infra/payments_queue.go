@@ -1,10 +1,12 @@
-package payment
+package infra
 
 import (
 	"context"
 	"fmt"
 	"os"
-	"payment-proxy/internal/payment/entities"
+	"payment-proxy/internal/payment_processor"
+	"payment-proxy/internal/payments"
+	"payment-proxy/internal/payments/entities"
 	"runtime"
 	"strconv"
 	"sync"
@@ -13,10 +15,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-type RedisQueue struct {
+type PaymentsQueue struct {
 	redisClient    *redis.Client
-	service        *Service
-	gatewayManager *GatewayManager
+	service        *payments.Service
+	gatewayManager *payment_processor.GatewayManager
 }
 
 const (
@@ -29,20 +31,16 @@ type Job struct {
 	Values map[string]interface{}
 }
 
-func NewRedisQueue(ctx context.Context, redisClient *redis.Client, service *Service, gatewayManager *GatewayManager) *RedisQueue {
-	redisQ := &RedisQueue{
+func NewPaymentQueue(ctx context.Context, redisClient *redis.Client, service *payments.Service, gatewayManager *payment_processor.GatewayManager) *PaymentsQueue {
+	redisQ := &PaymentsQueue{
 		redisClient:    redisClient,
 		service:        service,
 		gatewayManager: gatewayManager,
 	}
-
-	go redisQ.Start()
 	return redisQ
 }
 
-func (q *RedisQueue) Start() {
-	q.ClearStream(context.Background())
-
+func (q *PaymentsQueue) StartConsumer() {
 	// Config
 	numConsumers := 5
 	numWorkers := runtime.NumCPU()
@@ -74,7 +72,7 @@ func (q *RedisQueue) Start() {
 	wg.Wait()
 }
 
-func (q *RedisQueue) startConsumer(ctx context.Context, rdb *redis.Client, consumerName, stream, group string, jobChan chan<- Job) {
+func (q *PaymentsQueue) startConsumer(ctx context.Context, rdb *redis.Client, consumerName, stream, group string, jobChan chan<- Job) {
 	for {
 		gateway := q.gatewayManager.GetTheBest()
 		if gateway == nil {
@@ -101,14 +99,12 @@ func (q *RedisQueue) startConsumer(ctx context.Context, rdb *redis.Client, consu
 	}
 }
 
-func (q *RedisQueue) startWorker(ctx context.Context, jobChan <-chan Job, id int, rdb *redis.Client, stream, group string, wg *sync.WaitGroup) {
+func (q *PaymentsQueue) startWorker(ctx context.Context, jobChan <-chan Job, id int, rdb *redis.Client, stream, group string, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for job := range jobChan {
-		fmt.Printf("[INFO][Worker-%d] Processando %s: %v\n", id, job.ID, job.Values)
 		payment, _ := mapToPayment(job.Values)
 		gateway := q.gatewayManager.GetTheBest()
 		if gateway == nil {
-			fmt.Println("[ERROR] No healthy gateways available")
 			rdb.XAck(ctx, stream, group, job.ID)
 			q.Enqueue(ctx, payment)
 			continue
@@ -116,12 +112,11 @@ func (q *RedisQueue) startWorker(ctx context.Context, jobChan <-chan Job, id int
 
 		_, err := q.service.ProcessPayment(ctx, gateway, payment)
 		if err != nil {
-			fmt.Printf("[ERROR] Failed to process payment %v: %v\n", payment.CorrelationID, err)
 			rdb.XAck(ctx, stream, group, job.ID)
 			q.Enqueue(ctx, payment)
+			fmt.Printf("[ERROR] Failed to process payment, payment reenqued %v: %v\n", payment.CorrelationID, err.Error())
 			continue
 		}
-		fmt.Printf("[INFO] Payment processed successfully: %v in Gateway:%v\n", payment.CorrelationID, payment.PaymentGatewayType)
 	}
 }
 
@@ -155,15 +150,14 @@ func (q *RedisQueue) startWorker(ctx context.Context, jobChan <-chan Job, id int
 // 	}
 // }
 
-func (q *RedisQueue) Enqueue(ctx context.Context, payment entities.Payment) {
-	result := q.redisClient.XAdd(ctx, &redis.XAddArgs{
+func (q *PaymentsQueue) Enqueue(ctx context.Context, payment entities.Payment) {
+	q.redisClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: PaymentStream,
 		Values: structToMap(payment),
 	})
-	fmt.Println("[INFO] Enqueued payment:", result)
 }
 
-func (q *RedisQueue) ClearStream(ctx context.Context) {
+func (q *PaymentsQueue) ClearStream(ctx context.Context) {
 	err := q.redisClient.Del(ctx, PaymentStream).Err()
 	if err != nil {
 		fmt.Printf("[ERROR] Failed to clear stream %s: %v\n", PaymentStream, err)

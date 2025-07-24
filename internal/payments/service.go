@@ -1,21 +1,23 @@
-package payment
+package payments
 
 import (
 	"context"
 	"errors"
-	"payment-proxy/internal/payment/entities"
+	"payment-proxy/internal/payment_processor"
+	"payment-proxy/internal/payments/entities"
+	"payment-proxy/internal/payments/repository"
 	"time"
 )
 
 type Service struct {
-	paymentRepository PaymentRepository
+	paymentRepository repository.Payment
 }
 
-func NewPaymentService(repo PaymentRepository) *Service {
+func NewPaymentService(repo repository.Payment) *Service {
 	return &Service{paymentRepository: repo}
 }
 
-func (s *Service) ProcessPayment(ctx context.Context, gateway PaymentGateway, payment entities.Payment) (entities.Payment, error) {
+func (s *Service) ProcessPayment(ctx context.Context, gw payment_processor.PaymentGateway, payment entities.Payment) (entities.Payment, error) {
 	if payment.CorrelationID == "" {
 		return payment, errors.New("correlation ID is required")
 	}
@@ -29,16 +31,16 @@ func (s *Service) ProcessPayment(ctx context.Context, gateway PaymentGateway, pa
 		return payment, errors.New("invalid payment amount")
 	}
 	payment.RequestedAt = time.Now().UTC()
-	if gateway == nil {
+	if gw == nil {
 		return payment, errors.New("no healthy gateways available")
 	}
 
-	err := gateway.ProcessPayment(payment)
+	err := gw.ProcessPayment(payment)
 	if err != nil {
 		return payment, err
 	}
 
-	payment.PaymentGatewayType = gateway.GetType()
+	payment.PaymentGatewayType = gw.GetType()
 	err = s.paymentRepository.Save(ctx, payment)
 	if err != nil {
 		return payment, err

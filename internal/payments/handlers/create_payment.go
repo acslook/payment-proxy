@@ -3,17 +3,17 @@ package handlers
 import (
 	"context"
 	"net/http"
-	"payment-proxy/internal/payment"
-	"payment-proxy/internal/payment/entities"
+	"payment-proxy/internal/infra"
+	"payment-proxy/internal/payments/entities"
 
 	"github.com/labstack/echo/v4"
 )
 
 type CreatePaymentHandler struct {
-	paymentQueue *payment.RedisQueue
+	paymentQueue *infra.PaymentsQueue
 }
 
-func NewCreatePaymentHandler(q *payment.RedisQueue) *CreatePaymentHandler {
+func NewCreatePaymentHandler(q *infra.PaymentsQueue) *CreatePaymentHandler {
 	return &CreatePaymentHandler{paymentQueue: q}
 }
 

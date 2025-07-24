@@ -1,12 +1,11 @@
 module payment-proxy
 
-go 1.23.1
+go 1.23.4
 
 require (
 	github.com/go-redsync/redsync/v4 v4.13.0
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/labstack/echo/v4 v4.13.4
-	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/redis/go-redis/v9 v9.11.0
 )
 

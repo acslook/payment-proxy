@@ -1,9 +1,11 @@
-package payment
+package payments
 
 import (
 	"context"
 	"fmt"
-	"payment-proxy/internal/payment/entities"
+	"log"
+	"os"
+	"payment-proxy/internal/payments/entities"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -13,17 +15,28 @@ type PaymentPostgresRepository struct {
 	pool *pgxpool.Pool
 }
 
-func NewPaymentPostgresRepository(pool *pgxpool.Pool) (*PaymentPostgresRepository, error) {
-
-	repo := &PaymentPostgresRepository{
-		pool: pool,
+func NewPaymentPostgresRepository(ctx context.Context) (*PaymentPostgresRepository, error) {
+	connString := os.Getenv("CONN_STRING")
+	if connString == "" {
+		log.Fatal("CONN_STRING not defined")
 	}
 
-	// if err := repo.createTableIfNotExists(); err != nil {
-	// 	return nil, err
-	// }
+	dbpool, err := pgxpool.New(ctx, connString)
+	if err != nil {
+		log.Fatalf("failed to connect to PostgreSQL: %v", err)
+	}
+
+	repo := &PaymentPostgresRepository{
+		pool: dbpool,
+	}
 
 	return repo, nil
+}
+
+func (r *PaymentPostgresRepository) Close() {
+	if r.pool != nil {
+		r.pool.Close()
+	}
 }
 
 // func (r *PaymentPostgresRepository) createTableIfNotExists() error {
