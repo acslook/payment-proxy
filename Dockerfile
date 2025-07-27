@@ -17,7 +17,7 @@ FROM alpine:latest
 WORKDIR /app
 
 COPY /containers/app/docker-entrypoint.sh ./docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
 
 
 COPY --from=builder /app/server ./server
