@@ -107,50 +107,29 @@ func (r *PaymentPostgresRepository) GetAll(ctx context.Context) []entities.Payme
 
 func (r *PaymentPostgresRepository) GetByDateRange(ctx context.Context, from, to *time.Time) (entities.AggregatedSummary, error) {
 	query := `
-		SELECT gateway_type, COUNT(*) AS total_requests, SUM(amount) AS total_amount
+		SELECT
+			COUNT(*) FILTER (WHERE gateway_type = 0)  AS default_total_requests,
+			COALESCE(SUM(amount) FILTER (WHERE gateway_type = 0), 0) AS default_total_amount,
+			COUNT(*) FILTER (WHERE gateway_type = 1) AS fallback_total_requests,
+			COALESCE(SUM(amount) FILTER (WHERE gateway_type = 1), 0) AS fallback_total_amount
 		FROM payments
-		WHERE 1=1
+		WHERE ($1::timestamptz IS NULL OR requested_at >= $1)
+		  AND ($2::timestamptz IS NULL OR requested_at <= $2)
 	`
-	var args []interface{}
-	argIdx := 1
 
-	if from != nil {
-		query += fmt.Sprintf(" AND requested_at >= $%d", argIdx)
-		args = append(args, *from)
-		argIdx++
-	}
-	if to != nil {
-		query += fmt.Sprintf(" AND requested_at <= $%d", argIdx)
-		args = append(args, *to)
-		argIdx++
-	}
-	query += " GROUP BY gateway_type"
+	var summary entities.AggregatedSummary
 
-	rows, err := r.pool.Query(ctx, query, args...)
+	err := r.pool.QueryRow(ctx, query, from, to).Scan(
+		&summary.Default.TotalRequests,
+		&summary.Default.TotalAmount,
+		&summary.Fallback.TotalRequests,
+		&summary.Fallback.TotalAmount,
+	)
 	if err != nil {
 		return entities.AggregatedSummary{}, err
 	}
-	defer rows.Close()
 
-	var summary struct {
-		gatewayType   entities.GatewayType
-		totalRequests int64
-		totalAmount   float64
-	}
-	var summaryAggregated entities.AggregatedSummary
-	for rows.Next() {
-		if err := rows.Scan(&summary.gatewayType, &summary.totalRequests, &summary.totalAmount); err != nil {
-			return entities.AggregatedSummary{}, err
-		}
-		if summary.gatewayType == entities.DefaultGateway {
-			summaryAggregated.Default.TotalRequests = summary.totalRequests
-			summaryAggregated.Default.TotalAmount = summary.totalAmount
-		} else {
-			summaryAggregated.Fallback.TotalRequests = summary.totalRequests
-			summaryAggregated.Fallback.TotalAmount = summary.totalAmount
-		}
-	}
-	return summaryAggregated, nil
+	return summary, nil
 }
 
 func (r *PaymentPostgresRepository) Purge(ctx context.Context) {

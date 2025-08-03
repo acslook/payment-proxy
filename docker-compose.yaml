@@ -1,5 +1,9 @@
 name : payment-proxy
 
+x-service-templates:
+  base: &apibase
+    image: acslook/payment-proxy:v3
+
 services:  
   redis:
     container_name: redis
@@ -13,7 +17,7 @@ services:
       resources:
         limits:
           cpus: '0.1'
-          memory: "80MB"
+          memory: "90MB"
   db:
     image: postgres:17-alpine
     container_name: payment-db
@@ -24,7 +28,17 @@ services:
       - POSTGRES_DB=payments_db
     ports:
       - "5432:5432"
-    command: postgres -c max_connections=450 -c shared_buffers=32MB -c effective_cache_size=96MB -c work_mem=3MB -c maintenance_work_mem=12MB -c synchronous_commit=off -c fsync=off
+    command: >
+      postgres 
+        -c max_connections=400 
+        -c shared_buffers=128MB 
+        -c effective_cache_size=256MB 
+        -c work_mem=8MB 
+        -c maintenance_work_mem=12MB 
+        -c synchronous_commit=off 
+        -c full_page_writes=off
+        -c fsync=off
+        -c log_min_messages=panic
     networks:
       - backend
       - payment-processor
@@ -34,15 +48,15 @@ services:
       resources:
         limits:
           cpus: "0.3"
-          memory: "100MB"
+          memory: "130MB"
   api1:
-      image: acslook/payment-proxy:v2
+      <<: *apibase
       container_name: api1
       environment:
         - CONN_STRING=postgres://rinha25:rinha25@db:5432/payments_db?sslmode=disable
-        - REDIS_URL=redis:6379
-        - GATEWAY_DEFAULT_URL=http://payment-processor-default:8080
-        - GATEWAY_FALLBACK_URL=http://payment-processor-fallback:8080
+        - REDIS_URL=127.0.0.1:6379
+        - GATEWAY_DEFAULT_URL=127.0.0.1:8080
+        - GATEWAY_FALLBACK_URL=127.0.0.1:8080
       networks:
         - backend
         - payment-processor
@@ -52,18 +66,18 @@ services:
         resources:
           limits:
             cpus: '0.2'
-            memory: "50MB"
+            memory: "10MB"
       depends_on:
         - db
         - redis
   api2:
-    image: acslook/payment-proxy:v2
+    <<: *apibase
     container_name: api2
     environment:
       - CONN_STRING=postgres://rinha25:rinha25@db:5432/payments_db?sslmode=disable
-      - REDIS_URL=redis:6379
-      - GATEWAY_DEFAULT_URL=http://payment-processor-default:8080
-      - GATEWAY_FALLBACK_URL=http://payment-processor-fallback:8080
+      - REDIS_URL=127.0.0.1:6379
+      - GATEWAY_DEFAULT_URL=127.0.0.1:8080
+      - GATEWAY_FALLBACK_URL=127.0.0.1:8080
     networks:
       - backend
       - payment-processor
@@ -73,12 +87,13 @@ services:
       resources:
         limits:
           cpus: '0.2'
-          memory: "50MB"
+          memory: "10MB"
     depends_on:
       - db
       - redis
+
   worker:
-      image: acslook/payment-proxy:v2
+      <<: *apibase
       container_name: worker
       environment:
         - CONN_STRING=postgres://rinha25:rinha25@db:5432/payments_db?sslmode=disable
@@ -93,8 +108,8 @@ services:
       deploy:
         resources:
           limits:
-            cpus: '0.6'
-            memory: "40MB"
+            cpus: '0.2'
+            memory: "60MB"
       depends_on:
         - db
         - redis
@@ -113,7 +128,7 @@ services:
       resources:
         limits:
           cpus: '0.2'
-          memory: "30MB"
+          memory: "50MB"
     networks:
       - backend
 networks:

@@ -42,7 +42,7 @@ func NewPaymentQueue(ctx context.Context, redisClient *redis.Client, service *pa
 
 func (q *PaymentsQueue) StartConsumer() {
 	// Config
-	numConsumers := 5
+	numConsumers := runtime.NumCPU()
 	numWorkers := runtime.NumCPU()
 	fmt.Printf("[INFO] Starting Redis Queue with %d workers\n", numWorkers)
 

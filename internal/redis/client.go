@@ -20,8 +20,9 @@ func NewClient() *Client {
 		log.Fatal("CONN_STRING not defined")
 	}
 	client := redis.NewClient(&redis.Options{
-		Addr:     redisUrl,
-		PoolSize: 20,
+		Addr:         redisUrl,
+		PoolSize:     20,
+		MinIdleConns: 5,
 	})
 
 	pool := redsync_redis.NewPool(client)

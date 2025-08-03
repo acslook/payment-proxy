@@ -1,12 +1,10 @@
 package handlers
 
 import (
-	"context"
+	"encoding/json"
 	"net/http"
 	"payment-proxy/internal/payments"
 	"time"
-
-	"github.com/labstack/echo/v4"
 )
 
 type GetSummaryHandler struct {
@@ -17,32 +15,43 @@ func NewGetSummaryHandler(s *payments.Service) *GetSummaryHandler {
 	return &GetSummaryHandler{paymentService: s}
 }
 
-func (h *GetSummaryHandler) Handle(c echo.Context) error {
-	fromStr := c.QueryParam("from")
-	toStr := c.QueryParam("to")
+func (h *GetSummaryHandler) Handle(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	query := r.URL.Query()
+	fromStr := query.Get("from")
+	toStr := query.Get("to")
 
 	var from, to *time.Time
+	var err error
 
 	if fromStr != "" {
-		t, err := time.Parse(time.RFC3339, fromStr)
+		t, err := time.ParseInLocation(time.RFC3339, fromStr, time.UTC)
 		if err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid 'from' date"})
+			http.Error(w, `{"error":"invalid 'from' date"}`, http.StatusBadRequest)
+			return
 		}
 		from = &t
 	}
 
 	if toStr != "" {
-		t, err := time.Parse(time.RFC3339, toStr)
+		t, err := time.ParseInLocation(time.RFC3339, toStr, time.UTC)
 		if err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid 'to' date"})
+			http.Error(w, `{"error":"invalid 'to' date"}`, http.StatusBadRequest)
+			return
 		}
 		to = &t
 	}
 
-	summary, err := h.paymentService.GetPaymentsSummary(context.Background(), from, to)
+	summary, err := h.paymentService.GetPaymentsSummary(r.Context(), from, to)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get summary"})
+		http.Error(w, `{"error":"failed to get summary"}`, http.StatusInternalServerError)
+		return
 	}
 
-	return c.JSON(http.StatusOK, summary)
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(summary); err != nil {
+		http.Error(w, `{"error":"failed to encode response"}`, http.StatusInternalServerError)
+	}
 }

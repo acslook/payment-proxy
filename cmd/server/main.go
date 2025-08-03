@@ -13,13 +13,13 @@ import (
 	"payment-proxy/internal/payments/handlers"
 	"payment-proxy/internal/redis"
 	"syscall"
+	"time"
 
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
+	"github.com/NYTimes/gziphandler"
 )
 
 func main() {
-	// Carregar contexto e configurar graceful shutdown
+	// Graceful shutdown
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -39,23 +39,61 @@ func main() {
 	createPaymentHandler := handlers.NewCreatePaymentHandler(redisQueue)
 	getPaymentsSummaryHandler := handlers.NewGetSummaryHandler(service)
 
-	//Configure echo server
-	e := echo.New()
-	e.Use(middleware.Recover())
-	e.Use(middleware.Gzip())
-	e.HideBanner = true
-	e.HidePort = true
-	e.Debug = false
+	// Roteador http
+	mux := http.NewServeMux()
 
-	e.POST("/payments", createPaymentHandler.Handle)
-	e.GET("/payments-summary", getPaymentsSummaryHandler.Handle)
-	e.POST("/purge-payments", func(c echo.Context) error {
-		repo.Purge(context.Background())
-		redisQueue.ClearStream(context.Background())
-		return c.JSON(http.StatusOK, map[string]string{"message": "payments purged"})
+	mux.HandleFunc("/payments", createPaymentHandler.Handle)
+
+	mux.HandleFunc("/payments-summary", getPaymentsSummaryHandler.Handle)
+
+	mux.HandleFunc("/purge-payments", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		repo.Purge(r.Context())
+		redisQueue.ClearStream(r.Context())
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"message": "payments purged"}`))
 	})
 
-	if err := e.Start(":9999"); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		slog.Error("failed to start server", "error", err)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status": "ok"}`))
+	})
+
+	server := &http.Server{
+		Addr:    ":9999",
+		Handler: gziphandler.GzipHandler(recoverMiddleware(mux)),
 	}
+
+	go func() {
+		slog.Info("server started on :9999")
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("failed to start server", "error", err)
+		}
+	}()
+
+	<-ctx.Done()
+	stop()
+	slog.Info("shutting down server...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	server.Shutdown(shutdownCtx)
+}
+
+func recoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("panic recovered", "error", rec)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
