@@ -7,7 +7,6 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o server ./cmd/server
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o worker ./cmd/worker
 
@@ -16,9 +15,9 @@ FROM alpine:latest
 
 WORKDIR /app
 
-COPY /containers/app/docker-entrypoint.sh ./docker-entrypoint.sh
-RUN chmod +x ./docker-entrypoint.sh
-
+# Copia o entrypoint corretamente (sem barra inicial)
+COPY containers/app/docker-entrypoint.sh ./docker-entrypoint.sh
+RUN apk add --no-cache dos2unix && dos2unix ./docker-entrypoint.sh && chmod +x ./docker-entrypoint.sh
 
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/worker ./worker

@@ -63,7 +63,7 @@ func (m *GatewayManager) MonitorHealth() {
 	def := m.gateways[entities.DefaultGateway].(*PaymentsGateway)
 	fb := m.gateways[entities.FallbackGateway].(*PaymentsGateway)
 
-	if fb.healthy && def.healthy && float64(def.minResponseTime) >= 2*float64(fb.minResponseTime) {
+	if fb.healthy && def.healthy && float64(def.minResponseTime) >= 2.5*float64(fb.minResponseTime) {
 		theBest = m.gateways[entities.FallbackGateway]
 	}
 

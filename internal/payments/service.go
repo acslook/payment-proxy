@@ -22,11 +22,6 @@ func (s *Service) ProcessPayment(ctx context.Context, gw payment_processor.Payme
 		return payment, errors.New("correlation ID is required")
 	}
 
-	paymentDb, exists := s.paymentRepository.Get(ctx, payment.CorrelationID)
-	if exists {
-		return paymentDb, nil
-	}
-
 	if payment.Amount <= 0 {
 		return payment, errors.New("invalid payment amount")
 	}

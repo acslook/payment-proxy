@@ -47,13 +47,13 @@ func (q *PaymentsQueue) StartConsumer() {
 	fmt.Printf("[INFO] Starting Redis Queue with %d workers\n", numWorkers)
 
 	// Canal de jobs
-	jobChan := make(chan Job, 1000)
+	jobChan := make(chan Job, 15000)
 
 	// Workers
 	var wg sync.WaitGroup
 	for i := 1; i <= numWorkers; i++ {
 		wg.Add(1)
-		go q.startWorker(context.Background(), jobChan, i, q.redisClient, PaymentStream, PaymentGroup, &wg)
+		go q.startWorker(context.Background(), jobChan, q.redisClient, PaymentStream, PaymentGroup, &wg)
 	}
 
 	// Consumer
@@ -83,7 +83,7 @@ func (q *PaymentsQueue) startConsumer(ctx context.Context, rdb *redis.Client, co
 			Group:    group,
 			Consumer: consumerName,
 			Streams:  []string{stream, ">"},
-			Block:    2 * time.Second,
+			Block:    5 * time.Second,
 			Count:    100,
 		}).Result()
 
@@ -99,7 +99,7 @@ func (q *PaymentsQueue) startConsumer(ctx context.Context, rdb *redis.Client, co
 	}
 }
 
-func (q *PaymentsQueue) startWorker(ctx context.Context, jobChan <-chan Job, id int, rdb *redis.Client, stream, group string, wg *sync.WaitGroup) {
+func (q *PaymentsQueue) startWorker(ctx context.Context, jobChan <-chan Job, rdb *redis.Client, stream, group string, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for job := range jobChan {
 		payment, _ := mapToPayment(job.Values)
