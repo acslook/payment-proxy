@@ -36,20 +36,9 @@ func (s *Service) ProcessPayment(ctx context.Context, gw payment_processor.Payme
 	}
 
 	payment.PaymentGatewayType = gw.GetType()
-	err = s.paymentRepository.Save(ctx, payment)
-	if err != nil {
-		return payment, err
-	}
+	s.paymentRepository.Save(ctx, &payment)
 
 	return payment, nil
-}
-
-func (s *Service) GetPayment(ctx context.Context, correlationID string) (entities.Payment, bool) {
-	payment, exists := s.paymentRepository.Get(ctx, correlationID)
-	if !exists {
-		return payment, false
-	}
-	return payment, true
 }
 
 func (s *Service) GetPaymentsSummary(ctx context.Context, from, to *time.Time) (entities.AggregatedSummary, error) {

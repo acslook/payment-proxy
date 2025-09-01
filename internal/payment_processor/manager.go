@@ -6,27 +6,23 @@ import (
 	"log"
 	"os"
 	"payment-proxy/internal/payments/entities"
-	"strconv"
-	"time"
-
-	"payment-proxy/internal/redis"
-
-	"github.com/go-redsync/redsync/v4"
+	"sync"
 )
 
 type GatewayManager struct {
-	redis    *redis.Client
-	gateways map[entities.GatewayType]PaymentGateway
+	gateways    map[entities.GatewayType]PaymentGateway
+	bestGateway entities.GatewayType
+	mu          sync.RWMutex
 }
 
-func NewGatewayManager(redis *redis.Client) *GatewayManager {
+func NewGatewayManager() *GatewayManager {
 	gatewayDefaultUrl := os.Getenv("GATEWAY_DEFAULT_URL")
 	if gatewayDefaultUrl == "" {
 		log.Fatal("GATEWAY_DEFAULT_URL not defined")
 	}
 	gatewayDefault := NewPaymentGateway(gatewayDefaultUrl, entities.DefaultGateway)
 	gatewayFallbackUrl := os.Getenv("GATEWAY_FALLBACK_URL")
-	if gatewayDefaultUrl == "" {
+	if gatewayFallbackUrl == "" {
 		log.Fatal("GATEWAY_FALLBACK_URL not defined")
 	}
 	gatewayFallback := NewPaymentGateway(gatewayFallbackUrl, entities.FallbackGateway)
@@ -35,37 +31,26 @@ func NewGatewayManager(redis *redis.Client) *GatewayManager {
 	gatewaysMap[entities.DefaultGateway] = gatewayDefault
 	gatewaysMap[entities.FallbackGateway] = gatewayFallback
 
-	m := &GatewayManager{
-		redis:    redis,
-		gateways: gatewaysMap,
+	return &GatewayManager{
+		gateways:    gatewaysMap,
+		bestGateway: entities.GatewayType(-1), // Nenhum inicialmente
 	}
-
-	return m
 }
 
 func (m *GatewayManager) MonitorHealth() {
-	ctx := context.Background()
-	mutex := m.redis.Lock.NewMutex("heath-check-pp", redsync.WithExpiry(60*time.Second))
-	if err := mutex.LockContext(ctx); err != nil {
-		return
-	}
+	// Monitoramento simples sem lock distribuído, pois está tudo em memória
 
 	for _, gw := range m.gateways {
-		health, minResponseTime := gw.HealthCheck(context.Background())
-		if health {
-			fmt.Printf("[health] %v UP (%v)ms\n", gw.GetType(), minResponseTime)
-		} else {
-			fmt.Printf("[health] %v DOWN (%v)ms\n", gw.GetType(), minResponseTime)
-		}
+		gw.HealthCheck(context.Background())
 	}
 
 	var theBest PaymentGateway
 	def := m.gateways[entities.DefaultGateway].(*PaymentsGateway)
 	fb := m.gateways[entities.FallbackGateway].(*PaymentsGateway)
 
-	if fb.healthy && def.healthy && float64(def.minResponseTime) >= 2.5*float64(fb.minResponseTime) {
-		theBest = m.gateways[entities.FallbackGateway]
-	}
+	// if fb.healthy && def.healthy && float64(def.minResponseTime) >= 3*float64(fb.minResponseTime) {
+	// 	theBest = m.gateways[entities.FallbackGateway]
+	// }
 
 	if theBest == nil && def.healthy {
 		theBest = m.gateways[entities.DefaultGateway]
@@ -75,38 +60,30 @@ func (m *GatewayManager) MonitorHealth() {
 		theBest = m.gateways[entities.FallbackGateway]
 	}
 
-	if theBest == nil {
-		err := m.redis.Client.Set(context.Background(), "the_best_gw", "", 0).Err()
-		if err != nil {
-			fmt.Printf("[ERROR] Failed to update the best gateway in cache: %v\n", err)
-		}
-	} else {
-		err := m.redis.Client.Set(context.Background(), "the_best_gw", fmt.Sprint(theBest.GetType()), 0).Err()
-		if err != nil {
-			fmt.Printf("[ERROR] Failed to update the best gateway in cache: %v\n", err)
-		}
-	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	if ok, err := mutex.UnlockContext(ctx); !ok || err != nil {
-		fmt.Println("[ERROR] Unlock error:", err)
+	if theBest == nil {
+		m.bestGateway = entities.GatewayType(-1)
+		fmt.Println("[INFO] No healthy gateway found")
+	} else {
+		m.bestGateway = theBest.GetType()
+		//fmt.Printf("[INFO] Best gateway updated to: %d\n", theBest)
 	}
 }
 
 func (m *GatewayManager) GetTheBest() PaymentGateway {
-	theBest := m.redis.Client.Get(context.Background(), "the_best_gw").Val()
-	if theBest == "" {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.bestGateway == entities.GatewayType(-1) {
 		return nil
 	}
 
-	i, err := strconv.Atoi(theBest)
-	if err != nil {
-		fmt.Printf("[ERROR] Failed to convert the best gateway type from cache: %v\n", err)
-		return nil
-	}
-
-	gateway, exists := m.gateways[entities.GatewayType(i)]
+	gateway, exists := m.gateways[m.bestGateway]
 	if !exists {
-		fmt.Printf("[ERROR] Gateway %s not found in the manager\n", theBest)
+		fmt.Printf("[ERROR] Gateway %d not found in the manager\n", m.bestGateway)
+		return nil
 	}
 	return gateway
 }

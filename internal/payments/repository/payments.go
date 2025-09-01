@@ -7,8 +7,7 @@ import (
 )
 
 type Payment interface {
-	Save(cxt context.Context, payment entities.Payment) error
-	Get(cxt context.Context, correlationID string) (entities.Payment, bool)
-	GetAll(cxt context.Context) []entities.Payment
+	Save(cxt context.Context, payment *entities.Payment)
 	GetByDateRange(cxt context.Context, from, to *time.Time) (entities.AggregatedSummary, error)
+	Purge(ctx context.Context)
 }
